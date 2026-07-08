@@ -1,0 +1,104 @@
+name: Archetype Test (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: "Language toolchain to install for the build tier: dotnet | java | go | node | none"
+        type: string
+        default: "none"
+      toolchain-version:
+        description: "Version spec for the toolchain setup action (e.g. 9.0.x, 21, 1.22)"
+        type: string
+        default: ""
+      archetect-version:
+        description: "archetect release to install"
+        type: string
+        default: "3.0.0"
+      harness-ref:
+        description: "git ref of archetype-test-harness to run"
+        type: string
+        default: "dev"
+      pytest-args:
+        description: "extra arguments passed to archetype-test / pytest"
+        type: string
+        default: "-v"
+    secrets:
+      ARCHETYPE_LIBS_TOKEN:
+        description: "Token with read access to the org's library repos; falls back to GITHUB_TOKEN"
+        required: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install archetect
+        env:
+          VERSION: ${{ inputs.archetect-version }}
+        run: |
+          curl -fsSLO "https://github.com/archetect/archetect/releases/download/v${VERSION}/archetect-v${VERSION}-linux-x86_64.tar.gz"
+          curl -fsSLO "https://github.com/archetect/archetect/releases/download/v${VERSION}/archetect-v${VERSION}-linux-x86_64.tar.gz.sha256"
+          sha256sum -c "archetect-v${VERSION}-linux-x86_64.tar.gz.sha256"
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf "archetect-v${VERSION}-linux-x86_64.tar.gz" -C "$HOME/.local/bin" --strip-components=1
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/archetect" --version
+
+      # Archetypes compose libraries via git@github.com: SSH sources; runners have no
+      # SSH key, so rewrite them to token-authenticated HTTPS. Internal library repos
+      # must either grant org-wide Actions access or be covered by ARCHETYPE_LIBS_TOKEN.
+      - name: Configure git access to library sources
+        env:
+          TOKEN: ${{ secrets.ARCHETYPE_LIBS_TOKEN || github.token }}
+        run: |
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "git@github.com:"
+
+      - name: Setup .NET
+        if: inputs.toolchain == 'dotnet'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.toolchain-version }}
+
+      - name: Setup Java
+        if: inputs.toolchain == 'java'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.toolchain-version }}
+
+      - name: Setup Go
+        if: inputs.toolchain == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.toolchain-version }}
+
+      - name: Setup Node
+        if: inputs.toolchain == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.toolchain-version }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Run archetype tests
+        env:
+          HARNESS_REF: ${{ inputs.harness-ref }}
+        run: uvx --from "git+https://github.com/p6m-archetypes/archetype-test-harness@${HARNESS_REF}" archetype-test ${{ inputs.pytest-args }}
+
+      - name: Upload rendered project on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-project
+          path: /tmp/pytest-of-*/
+          if-no-files-found: ignore
+          retention-days: 5

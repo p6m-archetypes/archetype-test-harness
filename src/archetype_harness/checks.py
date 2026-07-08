@@ -25,6 +25,11 @@ def test_expected_files_exist(case, rendered_project: Path):
     assert not missing, f"files missing from rendered project: {missing}"
 
 
+def test_absent_files_not_rendered(case, rendered_project: Path):
+    present = [f for f in case.absent_files if (rendered_project / f).exists()]
+    assert not present, f"files rendered that this case must not produce: {present}"
+
+
 def test_no_unrendered_placeholders_in_paths(rendered_project: Path):
     leaked = [
         str(p.relative_to(rendered_project))

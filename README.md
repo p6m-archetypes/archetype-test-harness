@@ -46,6 +46,15 @@ archetype-test -v --junitxml=results.xml
 Prerequisites: `archetect` >= 3.0 and `uv` on PATH; SSH or HTTPS access to the
 composed library repos on first render (archetect caches them afterwards).
 
+### Archetect v2 (Rhai) archetypes
+
+The harness reads `requires.archetect` from the archetype's `archetype.yaml` and
+picks the binary accordingly. Archetect 3.x refuses `.rhai` scripts, so Gen-1
+archetypes need a 2.x binary alongside v3, resolved in this order: `$ARCHETECT2`,
+`archetect2` on PATH, the homebrew `archetect@2` keg. Locally:
+`brew install archetect/tap/archetect@2`. In CI, pass a 2.x `archetect-version`
+to the reusable workflow and it installs the binary as `archetect2` automatically.
+
 ### manifest.yaml schema
 
 ```yaml
@@ -55,6 +64,8 @@ cases:
     project_dir: inventory-service # directory the render must produce
     expected_files:               # relative to project_dir, must exist
       - InventoryService.sln
+    absent_files:                 # relative to project_dir, must NOT exist
+      - InventoryService.Persistence
     yaml_globs:                   # must parse as YAML; a glob matching nothing fails
       - ".platform/kubernetes/**/*.yaml"
     requires: [dotnet]            # executables needed by build_steps; missing -> skip

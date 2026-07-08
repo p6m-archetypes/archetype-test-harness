@@ -1,6 +1,6 @@
 [project]
 name = "archetype-test-harness"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared integration test harness for p6m-archetypes: render an archetype headlessly, verify the generated project, build it"
 requires-python = ">=3.11"
 dependencies = [

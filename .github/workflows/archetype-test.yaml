@@ -12,7 +12,7 @@ on:
         type: string
         default: ""
       archetect-version:
-        description: "archetect release to install"
+        description: "archetect release to install; 2.x versions are installed as `archetect2` for Rhai-based archetypes"
         type: string
         default: "3.0.0"
       harness-ref:
@@ -47,10 +47,15 @@ jobs:
           curl -fsSLO "https://github.com/archetect/archetect/releases/download/v${VERSION}/archetect-v${VERSION}-linux-x86_64.tar.gz"
           curl -fsSLO "https://github.com/archetect/archetect/releases/download/v${VERSION}/archetect-v${VERSION}-linux-x86_64.tar.gz.sha256"
           sha256sum -c "archetect-v${VERSION}-linux-x86_64.tar.gz.sha256"
-          mkdir -p "$HOME/.local/bin"
-          tar -xzf "archetect-v${VERSION}-linux-x86_64.tar.gz" -C "$HOME/.local/bin" --strip-components=1
+          mkdir -p extracted "$HOME/.local/bin"
+          tar -xzf "archetect-v${VERSION}-linux-x86_64.tar.gz" -C extracted --strip-components=1
+          # the harness resolves 2.x (Rhai) binaries by the name archetect2
+          BIN_NAME=archetect
+          case "$VERSION" in 2*) BIN_NAME=archetect2 ;; esac
+          mv extracted/archetect "$HOME/.local/bin/$BIN_NAME"
+          rm -rf extracted
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/archetect" --version
+          "$HOME/.local/bin/$BIN_NAME" --version
 
       # Archetypes compose libraries via git@github.com: SSH sources; runners have no
       # SSH key, so rewrite them to token-authenticated HTTPS. Internal library repos

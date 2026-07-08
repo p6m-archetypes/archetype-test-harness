@@ -3,11 +3,19 @@
 Loaded automatically (pytest11 entry point) wherever archetype-test-harness is
 installed. Cases come from the archetype repo's tests/manifest.yaml; each case is
 rendered once per session and shared by every check.
+
+Supports both Archetect generations. The required major version is read from the
+archetype's own archetype.yaml (`requires.archetect`); v3 renders with the
+`archetect` binary, v2 (Rhai) needs a 2.x binary resolved from $ARCHETECT2,
+`archetect2` on PATH, or the homebrew archetect@2 keg.
 """
 
+import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -22,6 +30,7 @@ class Case:
     answers: Path
     project_dir: str
     expected_files: list[str] = field(default_factory=list)
+    absent_files: list[str] = field(default_factory=list)
     requires: list[str] = field(default_factory=list)
     build_steps: list[list[str]] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
@@ -48,6 +57,7 @@ def load_cases(tests_dir: Path) -> list[Case]:
             answers=tests_dir / raw["answers"],
             project_dir=raw["project_dir"],
             expected_files=raw.get("expected_files", []),
+            absent_files=raw.get("absent_files", []),
             requires=raw.get("requires", []),
             build_steps=raw.get("build_steps", []),
             env={k: str(v) for k, v in raw.get("env", {}).items()},
@@ -55,6 +65,48 @@ def load_cases(tests_dir: Path) -> list[Case]:
         )
         for raw in manifest["cases"]
     ]
+
+
+@lru_cache(maxsize=None)
+def required_archetect_major(archetype_root: Path) -> int:
+    """Major Archetect version from the archetype's `requires.archetect`; default 3."""
+    spec = ""
+    manifest = archetype_root / "archetype.yaml"
+    if manifest.is_file():
+        spec = str((yaml.safe_load(manifest.read_text()) or {}).get("requires", {}).get("archetect", ""))
+    match = re.search(r"(\d+)", spec)
+    return int(match.group(1)) if match else 3
+
+
+@lru_cache(maxsize=None)
+def find_archetect(major: int) -> str:
+    if major >= 3:
+        if shutil.which("archetect") is None:
+            pytest.fail(
+                "archetect not found on PATH. Install it first: https://archetect.github.io/ "
+                "(brew install archetect-cli or download a release binary)."
+            )
+        return "archetect"
+
+    candidates = [
+        os.environ.get("ARCHETECT2"),
+        shutil.which("archetect2"),
+        "/opt/homebrew/opt/archetect@2/bin/archetect",
+        "/usr/local/opt/archetect@2/bin/archetect",
+        shutil.which("archetect"),
+    ]
+    for candidate in candidates:
+        if not candidate or not (shutil.which(candidate) or Path(candidate).is_file()):
+            continue
+        result = subprocess.run([candidate, "--version"], capture_output=True, text=True)
+        if result.returncode == 0 and result.stdout.split()[-1].startswith("2."):
+            return candidate
+    pytest.fail(
+        "No Archetect 2.x binary found. This archetype uses a Rhai script, which "
+        "Archetect 3.x does not render. Install v2 alongside v3 "
+        "(brew install archetect/tap/archetect@2), then either symlink it as "
+        "`archetect2` or point $ARCHETECT2 at the binary."
+    )
 
 
 def pytest_addoption(parser):
@@ -93,19 +145,17 @@ def case(request) -> Case:
 @pytest.fixture(scope="session")
 def rendered_project(case: Case, tmp_path_factory, request) -> Path:
     """Render the archetype headlessly for this case; returns the generated project dir."""
-    if shutil.which("archetect") is None:
-        pytest.fail(
-            "archetect not found on PATH. Install it first: https://archetect.github.io/ "
-            "(brew install archetect-cli or download a release binary)."
-        )
-
     tests_dir = find_tests_dir(Path(request.config.getoption("--archetype-dir")).resolve())
     archetype_root = tests_dir.parent if tests_dir.name == "tests" else tests_dir
 
+    major = required_archetect_major(archetype_root)
+    archetect = find_archetect(major)
+
     out_dir = tmp_path_factory.mktemp(f"render-{case.name}")
+    # v2 takes the destination as a positional argument; v3 uses --dest
+    destination = [str(out_dir)] if major < 3 else ["--dest", str(out_dir)]
     cmd = [
-        "archetect", "render", str(archetype_root),
-        "--dest", str(out_dir),
+        archetect, "render", str(archetype_root), *destination,
         "-A", str(case.answers),
         "-D",  # use prompt defaults for anything the answers file doesn't cover
         "--headless",

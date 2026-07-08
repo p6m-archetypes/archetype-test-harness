@@ -60,6 +60,8 @@ jobs:
           TOKEN: ${{ secrets.ARCHETYPE_LIBS_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "git@github.com:"
+          # uvx fetches the harness itself via plain https; authenticate that too
+          git config --global url."https://x-access-token:${TOKEN}@github.com/p6m-archetypes/".insteadOf "https://github.com/p6m-archetypes/"
 
       - name: Setup .NET
         if: inputs.toolchain == 'dotnet'

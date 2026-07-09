@@ -15,9 +15,20 @@ import yaml
 
 BUILD_STEP_TIMEOUT = 900  # seconds per build step
 
-# Anything that looks like an unrendered Jinja/Archetect placeholder.
-# `${{ ... }}` is excluded: that's GitHub Actions expression syntax, not a template leak.
-UNRENDERED = re.compile(r"(?<!\$)\{\{|\{%")
+# Anything that looks like an unrendered Jinja/Archetect placeholder. Archetect
+# templates in this org are authored with inner padding - `{{ project-name }}`,
+# `{% if x %}`, and the whitespace-control forms `{{- x -}}` / `{%- x -%}` - so a
+# genuine leak always has a `-`/`+`/`~` control char or whitespace right after the
+# opening `{{`. That padding is what distinguishes a real leak from literal
+# templating that must survive rendering:
+#   - `${{ ... }}` GitHub Actions expressions (excluded via the `$` lookbehind);
+#   - docker/metadata-action Go-templates in generated CI workflows, e.g.
+#     `enable={{is_default_branch}}`, `value={{version}}`;
+#   - Grafana `legendFormat` tokens in generated dashboards, e.g. `{{method}}`,
+#     `{{status_code}}`, `{{operation_type}}`.
+# Those hug their braces (no adjacent space), so requiring whitespace/control after
+# `{{` skips them while still catching unrendered `{{ name }}` placeholders.
+UNRENDERED = re.compile(r"(?<!\$)\{\{[-+~]?\s|\{%")
 
 
 def test_expected_files_exist(case, rendered_project: Path):

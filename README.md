@@ -82,28 +82,30 @@ Anything the answers file omits falls back to the prompt's default
 
 ## CI
 
-Consumers call the reusable workflow - the entire consumer workflow is:
+Consumers call the reusable workflow, which now lives in its own repo,
+[`p6m-workflows/archetype-test`](https://github.com/p6m-workflows/archetype-test).
+The entire consumer workflow is:
 
 ```yaml
 name: Test Archetype
 on: [pull_request, push, workflow_dispatch]
 jobs:
   test:
-    uses: p6m-archetypes/archetype-test-harness/.github/workflows/archetype-test.yaml@dev
+    uses: p6m-workflows/archetype-test/.github/workflows/workflow.yml@v1
     with:
       toolchain: dotnet
       toolchain-version: "9.0.x"
     secrets: inherit
 ```
 
-The reusable workflow installs archetect (checksum-verified), rewrites the
+That reusable workflow installs archetect (checksum-verified), rewrites the
 libraries' `git@github.com:` sources to token-authenticated HTTPS (preferring the
 `ARCHETYPE_LIBS_TOKEN` org secret, falling back to `GITHUB_TOKEN`), sets up the
-requested toolchain, runs the harness, and uploads the rendered project as an
-artifact on failure.
+requested toolchain, runs this harness via `uvx --from git+...`, and uploads the
+rendered project as an artifact on failure.
 
-Note: for other repos' workflows to use this repo (both the reusable workflow and
-`uvx --from git+...`), this repo must grant org-wide Actions access:
+Note: for that workflow's `uvx --from git+...` step to install this harness, this
+repo must be readable by the calling org's Actions:
 Settings -> Actions -> General -> Access -> "Accessible from repositories in the
 organization".
 
